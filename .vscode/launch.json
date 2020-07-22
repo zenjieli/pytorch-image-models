@@ -8,9 +8,8 @@
             "name": "train",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",            
-            // /imagenet -b 64 --model resnet50 --sched cosine --epochs 200 --lr 0.05 --remode pixel --reprob 0.6 --aug-splits 3 
             "args": ["~/data/fire/", 
                 "-b", "16",
                 "--model", "resnet50",
@@ -24,14 +23,17 @@
                 "--jsd"]
         },
         {
-            "name": "validate",
+            "name": "infer",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",            
-            "args": ["~/data/fire/validation", "--model", 
-                "resnet50", "--checkpoint", 
-                "./output/train/20200714-161601-resnet50-224/model_best.pth.tar"]
+            "program": "${workspaceFolder}/inference.py",
+            "console": "integratedTerminal",
+            "args": ["~/data/fire/test", 
+                "--model", "resnet50",
+                "--num-classes", "2",
+                "--topk", "1",
+                "--output_dir", "${workspaceFolder}/output/test",
+                "--checkpoint", "./output/good/checkpoint-10.pth.tar"]
         }
     ]
 }

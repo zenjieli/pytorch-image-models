@@ -15,6 +15,7 @@ import torch
 from timm.models import create_model, apply_test_time_pool
 from timm.data import Dataset, create_loader, resolve_data_config
 from timm.utils import AverageMeter, setup_default_logging
+import onnx
 
 torch.backends.cudnn.benchmark = True
 
@@ -53,6 +54,70 @@ parser.add_argument('--topk', default=5, type=int,
                     metavar='N', help='Top-k to output to CSV')
 
 
+def export_to_onnx():
+    setup_default_logging()
+    args = parser.parse_args()
+    # might as well try to do something useful...
+    args.pretrained = args.pretrained or not args.checkpoint
+
+    # create model
+    model = create_model(
+        args.model,
+        num_classes=args.num_classes,
+        in_chans=3,
+        pretrained=args.pretrained,
+        checkpoint_path=args.checkpoint)
+
+    logging.info('Model %s created, param count: %d' %
+                 (args.model, sum([m.numel() for m in model.parameters()])))
+
+    out_path = '/tmp/resnet50_output.onnx'
+    model.eval()
+    x = torch.randn(1, 3, 224, 224, requires_grad=True)
+
+    # Run model once before export trace
+    model(x)
+
+    torch.onnx._export(model,
+                       x,           # model input
+                       out_path,    # output path
+                       input_names=['input0'],  # model input names
+                       output_names=['output0']  # model output names
+                       )
+
+    print('==> Loading and checking exportd model')
+    onnx_model = onnx.load(out_path)
+
+    # The validity of the ONNX graph is verified by checking the model’s version, the graph’s structure,
+    # as well as the nodes and their inputs and outputs
+    onnx.checker.check_model(onnx_model)
+    print('==> Passed')
+
+
+def to_numpy(tensor):
+    return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+
+def load_and_infer(input):
+    import onnxruntime as ort
+    from PIL import Image
+    import torchvision.transforms as transforms
+
+    model_path = './output/resnet50_output.onnx'
+    model = onnx.load(model_path)
+    onnx.checker.check_model(model)
+
+    ort_session = ort.InferenceSession(model_path)
+
+    input0 = np.expand_dims(input[0], axis=0)
+    outputs = ort_session.run(None, {'input0': input0})
+    print(outputs[0])
+
+    input1 = np.expand_dims(input[1], axis=0)
+    outputs = ort_session.run(None, {'input0': input1})
+    print(outputs[0])
+
+
 def main():
     setup_default_logging()
     args = parser.parse_args()
@@ -74,7 +139,8 @@ def main():
     model, test_time_pool = apply_test_time_pool(model, config, args)
 
     if args.num_gpu > 1:
-        model = torch.nn.DataParallel(model, device_ids=list(range(args.num_gpu))).cuda()
+        model = torch.nn.DataParallel(
+            model, device_ids=list(range(args.num_gpu))).cuda()
     else:
         model = model.cuda()
 
@@ -97,8 +163,11 @@ def main():
     topk_ids = []
     with torch.no_grad():
         for batch_idx, (input, _) in enumerate(loader):
-            input = input.cuda()
+            # input = input.cuda()
             labels = model(input)
+
+            load_and_infer(input.cpu().numpy())
+
             topk = labels.topk(k)[1]
             topk_ids.append(topk.cpu().numpy())
 
@@ -116,9 +185,10 @@ def main():
         filenames = loader.dataset.filenames()
         for filename, label in zip(filenames, topk_ids):
             filename = os.path.basename(filename)
-            out_file.write('{0},{1},{2},{3},{4},{5}\n'.format(
-                filename, label[0], label[1], label[2], label[3], label[4]))
+            out_file.write('{0},{1}\n'.format(filename, label))
 
 
 if __name__ == '__main__':
     main()
+
+# load_and_infer()
