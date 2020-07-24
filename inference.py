@@ -110,13 +110,12 @@ def load_and_infer(input):
     ort_session = ort.InferenceSession(model_path)
 
     input0 = np.expand_dims(input[0], axis=0)
-    outputs = ort_session.run(None, {'input0': input0})
-    print(outputs[0])
-
+    outputs = ort_session.run(None, {'input0': input0})    
+    np.testing.assert_allclose(outputs[0], np.array([[0.683789, -0.43573943]]), rtol=1e-6)
     input1 = np.expand_dims(input[1], axis=0)
-    outputs = ort_session.run(None, {'input0': input1})
-    print(outputs[0])
-
+    outputs = ort_session.run(None, {'input0': input1})    
+    np.testing.assert_allclose(outputs[0], np.array([[-0.03671229, 0.05199742]]), rtol=1e-6)
+    
 
 def main():
     setup_default_logging()
@@ -190,5 +189,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# load_and_infer()
